@@ -1,0 +1,1726 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>探索紫禁城 - 3D 甄嬛傳宮殿探索與角色互動</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- OrbitControls -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- GSAP for Smooth Camera & UI Animations -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  
+  <!-- Google Fonts: Traditional Chinese Calligraphy & Serif -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+TC:wght@400;600;700;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            palace: {
+              red: '#8F1D1D',
+              deepred: '#5C0F0F',
+              gold: '#D4AF37',
+              brightgold: '#FFD700',
+              jade: '#1C3A27',
+              darkjade: '#0F2317',
+              silk: '#F8F4E9',
+              darkbg: '#0D0F17',
+            }
+          },
+          fontFamily: {
+            calli: ['"Ma Shan Zheng"', 'cursive', 'serif'],
+            serif: ['"Noto Serif TC"', 'serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Noto Serif TC', serif;
+      background-color: #0d0f17;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    /* Glassmorphism Panels */
+    .glass-panel {
+      background: rgba(22, 18, 24, 0.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(212, 175, 55, 0.35);
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.6);
+    }
+
+    .glass-panel-gold {
+      background: linear-gradient(135deg, rgba(143, 29, 29, 0.88), rgba(92, 15, 15, 0.94));
+      backdrop-filter: blur(12px);
+      border: 1.5px solid rgba(255, 215, 0, 0.5);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(18, 18, 22, 0.5);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #D4AF37;
+      border-radius: 3px;
+    }
+
+    /* Glowing Animations */
+    @keyframes goldGlow {
+      0%, 100% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.4), inset 0 0 5px rgba(212, 175, 55, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.8), inset 0 0 12px rgba(255, 215, 0, 0.4); }
+    }
+    .glow-gold {
+      animation: goldGlow 3s infinite;
+    }
+
+    /* POI HTML Markers */
+    .poi-marker {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      transition: opacity 0.3s ease, transform 0.2s ease;
+      cursor: pointer;
+      z-index: 10;
+    }
+    .poi-marker:hover {
+      transform: translate(-50%, -115%) scale(1.12);
+    }
+
+    .vignette-overlay {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+      box-shadow: inset 0 0 120px rgba(0,0,0,0.7);
+      z-index: 2;
+    }
+  </style>
+</head>
+<body class="text-palace-silk bg-palace-darkbg overflow-hidden select-none">
+
+  <!-- 3D WebGL Canvas Container -->
+  <div id="canvas-container"></div>
+  <div class="vignette-overlay"></div>
+
+  <!-- Projected 3D POI HTML Markers Overlay -->
+  <div id="markers-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden"></div>
+
+  <!-- Main Top Header Navigation -->
+  <header class="absolute top-0 left-0 w-full z-20 p-3 md:p-4 flex flex-col md:flex-row justify-between items-center gap-3 pointer-events-auto">
+    <!-- Brand Title -->
+    <div class="flex items-center gap-3 glass-panel px-4 py-2 rounded-xl border border-palace-gold/40">
+      <div class="w-10 h-10 rounded-full bg-palace-red border-2 border-palace-gold flex items-center justify-center text-palace-brightgold font-calli text-2xl shadow-lg">
+        紫
+      </div>
+      <div>
+        <h1 class="font-calli text-2xl md:text-3xl text-palace-brightgold tracking-wide drop-shadow-md">
+          探索紫禁城
+        </h1>
+        <p class="text-xs text-amber-200/80 font-serif -mt-1 tracking-wider">3D 甄嬛傳宮殿與角色對話</p>
+      </div>
+    </div>
+
+    <!-- Live Search & Progress Bar -->
+    <div class="flex items-center gap-2 md:gap-3 w-full md:w-auto justify-end flex-wrap">
+      <!-- Search Input -->
+      <div class="relative flex-1 md:w-56 glass-panel rounded-full px-3 py-1.5 flex items-center border border-palace-gold/30">
+        <i class="fa-solid fa-magnifying-glass text-palace-gold text-xs mr-2"></i>
+        <input type="text" id="search-input" placeholder="搜尋宮殿或角色..." 
+               class="bg-transparent border-none outline-none text-xs text-palace-silk w-full placeholder-amber-200/50">
+        <button id="clear-search" class="text-amber-200/50 hover:text-palace-gold hidden">
+          <i class="fa-solid fa-circle-xmark text-xs"></i>
+        </button>
+        
+        <!-- Search Auto-complete Dropdown -->
+        <div id="search-dropdown" class="absolute top-full left-0 right-0 mt-2 glass-panel rounded-xl border border-palace-gold/40 max-h-60 overflow-y-auto hidden z-30 shadow-2xl"></div>
+      </div>
+
+      <!-- Exploration Progress -->
+      <div class="glass-panel px-3 py-1.5 rounded-full flex items-center gap-2 border border-palace-gold/30 text-xs">
+        <i class="fa-solid fa-compass text-palace-brightgold animate-spin-slow"></i>
+        <span>探索:</span>
+        <span id="progress-text" class="text-palace-brightgold font-bold">0 / 15</span>
+        <div class="w-14 bg-gray-800 h-2 rounded-full overflow-hidden border border-palace-gold/30">
+          <div id="progress-bar-fill" class="bg-gradient-to-r from-palace-gold to-yellow-300 h-full w-0 transition-all duration-500"></div>
+        </div>
+      </div>
+
+      <!-- Action Toolbar Buttons -->
+      <div class="flex items-center gap-2">
+        <!-- Day / Night Toggle -->
+        <button id="btn-daynight" title="切換日夜與季節" class="glass-panel w-9 h-9 rounded-full flex items-center justify-center text-palace-brightgold hover:scale-105 active:scale-95 transition border border-palace-gold/40">
+          <i class="fa-solid fa-sun text-base" id="icon-daynight"></i>
+        </button>
+
+        <!-- Quiz Trigger -->
+        <button id="btn-quiz" title="宮廷知識問答" class="glass-panel px-3 h-9 rounded-full flex items-center gap-1 text-xs text-palace-brightgold hover:scale-105 active:scale-95 transition border border-palace-gold/40">
+          <i class="fa-solid fa-scroll text-sm"></i>
+          <span class="hidden sm:inline">宮廷小考</span>
+        </button>
+
+        <!-- Bookmarks Drawer Trigger -->
+        <button id="btn-bookmarks" title="收藏記錄" class="glass-panel w-9 h-9 rounded-full flex items-center justify-center text-rose-400 hover:scale-105 active:scale-95 transition border border-palace-gold/40 relative">
+          <i class="fa-solid fa-heart text-base"></i>
+          <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-palace-red text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold border border-palace-gold hidden">0</span>
+        </button>
+
+        <!-- Audio Sound Toggle -->
+        <button id="btn-audio" title="環境音樂與配音" class="glass-panel w-9 h-9 rounded-full flex items-center justify-center text-palace-gold hover:scale-105 active:scale-95 transition border border-palace-gold/40">
+          <i class="fa-solid fa-volume-xmark text-base" id="icon-audio"></i>
+        </button>
+
+        <!-- Camera Overview Reset -->
+        <button id="btn-reset-cam" title="重置全景視角" class="glass-panel px-3 h-9 rounded-full flex items-center gap-1 text-xs text-palace-silk hover:text-palace-brightgold hover:scale-105 active:scale-95 transition border border-palace-gold/40">
+          <i class="fa-solid fa-arrows-to-eye text-sm"></i>
+          <span class="hidden md:inline">全景</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Interior Mode Back Floating Button -->
+  <div id="interior-back-banner" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 glass-panel-gold rounded-full px-6 py-2.5 border-2 border-palace-brightgold shadow-2xl flex items-center gap-4 hidden pointer-events-auto glow-gold">
+    <div class="flex items-center gap-2">
+      <span class="w-3 h-3 rounded-full bg-emerald-400 animate-ping"></span>
+      <span class="font-calli text-xl text-palace-brightgold" id="interior-title-text">翊坤宮內部</span>
+    </div>
+    <div class="flex items-center gap-2 border-l border-palace-gold/40 pl-3">
+      <button id="btn-interact-char" class="px-3.5 py-1 rounded-full bg-palace-brightgold text-black font-bold text-xs hover:bg-yellow-300 transition shadow">
+        <i class="fa-solid fa-comments mr-1"></i> 與妃子對話
+      </button>
+      <button id="btn-exit-interior" class="px-3.5 py-1 rounded-full bg-palace-red text-white font-bold text-xs hover:bg-red-700 transition border border-palace-gold">
+        <i class="fa-solid fa-door-open mr-1"></i> 返回宮殿全景
+      </button>
+    </div>
+  </div>
+
+  <!-- Side Info Panel (Desktop Right / Mobile Drawer) -->
+  <aside id="info-panel" class="fixed right-0 top-0 md:top-16 bottom-0 w-full md:w-96 z-30 transform translate-x-full transition-transform duration-500 ease-out pointer-events-auto p-4 flex flex-col justify-end md:justify-start">
+    <div class="glass-panel-gold rounded-2xl border-2 border-palace-gold/60 p-5 shadow-2xl relative max-h-[85vh] md:max-h-[calc(100vh-5rem)] overflow-y-auto flex flex-col">
+      <!-- Close Button -->
+      <button id="close-panel" class="absolute top-4 right-4 text-palace-brightgold/70 hover:text-palace-brightgold text-xl w-8 h-8 rounded-full flex items-center justify-center hover:bg-black/30 transition">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <!-- Palace Title Banner -->
+      <div class="border-b border-palace-gold/30 pb-3 mb-3">
+        <div class="flex items-center gap-2 mb-1">
+          <span id="panel-tag" class="px-2 py-0.5 rounded bg-palace-gold/20 text-palace-brightgold text-[11px] border border-palace-gold/40 font-serif">西六宮</span>
+          <span id="panel-region" class="text-xs text-amber-100/70">西側宮殿區</span>
+        </div>
+        <h2 id="panel-title" class="font-calli text-3xl md:text-4xl text-palace-brightgold tracking-wide drop-shadow-md">
+          翊坤宮
+        </h2>
+      </div>
+
+      <!-- Character Favorability Card -->
+      <div class="bg-black/40 rounded-xl p-3 border border-palace-gold/30 mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-full border-2 border-palace-gold bg-palace-red flex items-center justify-center text-xl text-palace-brightgold shadow-inner flex-shrink-0" id="panel-char-icon">
+            👑
+          </div>
+          <div>
+            <p class="text-[11px] text-amber-200/70">代表人物與好感度</p>
+            <p id="panel-character" class="font-bold text-sm md:text-base text-palace-silk">年世蘭（華妃）</p>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <span id="panel-favor-score" class="text-xs text-palace-brightgold font-bold">好感度: 20</span>
+              <span id="panel-favor-title" class="text-[10px] px-1.5 py-0.2 rounded bg-red-900/60 text-red-200 border border-red-500/30">萍水相逢</span>
+            </div>
+          </div>
+        </div>
+        <button id="panel-chat-trigger" class="px-3 py-1.5 rounded-lg bg-palace-gold text-black text-xs font-bold hover:bg-yellow-400 transition shadow flex items-center gap-1">
+          <i class="fa-solid fa-comments"></i> 對話
+        </button>
+      </div>
+
+      <!-- Famous Quote Box -->
+      <div class="bg-palace-red/30 rounded-xl p-3 border-l-4 border-palace-brightgold mb-3 italic text-xs md:text-sm text-amber-100/90 relative">
+        <i class="fa-solid fa-quote-left absolute -top-2 -left-2 text-palace-gold/20 text-3xl"></i>
+        <p id="panel-quote" class="relative z-10 font-serif">「賤人就是矯情！」</p>
+      </div>
+
+      <!-- Description Text -->
+      <div class="space-y-2 mb-4 text-xs md:text-sm text-amber-50/90 leading-relaxed font-serif">
+        <h3 class="font-bold text-palace-brightgold flex items-center gap-1.5 border-b border-palace-gold/20 pb-1">
+          <i class="fa-solid fa-book-open text-xs"></i> 景點典故與故事
+        </h3>
+        <p id="panel-desc">
+          翊坤宮為紫禁城內廷西六宮之一，是華妃年世蘭盛寵一時的豪華寢宮。宮內賜有獨特的「歡宜香」，華妃引以為傲。
+        </p>
+        <div id="panel-extra-info" class="bg-black/20 p-2.5 rounded-lg border border-palace-gold/20 text-xs text-amber-200/80"></div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="mt-auto pt-3 border-t border-palace-gold/30 flex items-center gap-2">
+        <button id="btn-enter-interior" class="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-black font-bold text-xs md:text-sm shadow-lg flex items-center justify-center gap-1.5 transition active:scale-95">
+          <i class="fa-solid fa-door-open"></i> 進入宮殿內部
+        </button>
+        <button id="btn-toggle-bookmark" class="py-2.5 px-3 rounded-xl glass-panel text-palace-brightgold hover:bg-palace-gold/20 text-xs font-bold border border-palace-gold/50 flex items-center gap-1 transition active:scale-95">
+          <i class="fa-regular fa-heart" id="icon-panel-bookmark"></i>
+          <span id="text-panel-bookmark">收藏</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Interactive Character Dialogue Modal Window -->
+  <div id="character-dialogue-modal" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 w-[95%] max-w-2xl z-50 hidden pointer-events-auto">
+    <div class="glass-panel-gold rounded-2xl border-2 border-palace-brightgold p-4 md:p-6 shadow-2xl relative">
+      <!-- Close Button -->
+      <button id="close-char-dialogue" class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-palace-red text-palace-brightgold border border-palace-gold flex items-center justify-center shadow-lg hover:scale-110 transition">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <!-- Dialogue Header: Avatar & Favorability -->
+      <div class="flex items-start gap-4 mb-3 border-b border-palace-gold/30 pb-3">
+        <div class="w-14 h-14 md:w-16 md:h-16 rounded-full border-2 border-palace-brightgold bg-palace-red flex-shrink-0 flex items-center justify-center text-3xl text-palace-brightgold shadow-xl" id="dialogue-avatar">
+          👸
+        </div>
+        <div class="flex-1">
+          <div class="flex justify-between items-center mb-1">
+            <h3 id="dialogue-char-name" class="font-calli text-2xl text-palace-brightgold">年世蘭（華妃）</h3>
+            <div class="flex items-center gap-2">
+              <span id="dialogue-favor-score" class="text-xs bg-palace-gold/20 px-2 py-0.5 rounded text-amber-200 border border-palace-gold/30 font-bold">❤️ 好感度: 20</span>
+              <span id="dialogue-favor-title" class="text-xs bg-red-900/60 text-red-200 px-2 py-0.5 rounded border border-red-500/40">萍水相逢</span>
+            </div>
+          </div>
+          <!-- Typewriter Animated Speech -->
+          <p id="dialogue-speech-text" class="text-xs md:text-sm text-amber-100 font-serif leading-relaxed min-h-[3rem]">
+            「進了這翊坤宮，可別壞了本宮的規矩！」
+          </p>
+        </div>
+      </div>
+
+      <!-- Multiple Choice Dialogue Options -->
+      <div id="dialogue-options-container" class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+        <!-- Dynamically populated choices -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Quiz Modal Window -->
+  <div id="quiz-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden pointer-events-auto">
+    <div class="glass-panel-gold rounded-2xl border-2 border-palace-gold max-w-lg w-full p-6 shadow-2xl relative">
+      <button id="close-quiz" class="absolute top-4 right-4 text-palace-brightgold/70 hover:text-palace-brightgold text-xl">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="text-center mb-5">
+        <span class="px-3 py-1 rounded-full bg-palace-gold/20 text-palace-brightgold text-xs border border-palace-gold/40">宮廷知識檢定</span>
+        <h2 class="font-calli text-3xl text-palace-brightgold mt-2">紫禁城甄嬛傳小考</h2>
+      </div>
+
+      <div id="quiz-content">
+        <div class="mb-4">
+          <div class="flex justify-between text-xs text-amber-200/70 mb-1">
+            <span id="quiz-step-text">問題 1 / 5</span>
+            <span id="quiz-score-text">得分: 0</span>
+          </div>
+          <p id="quiz-question" class="text-sm md:text-base font-bold text-palace-silk bg-black/40 p-4 rounded-xl border border-palace-gold/30">
+            載入中...
+          </p>
+        </div>
+
+        <div id="quiz-options-container" class="space-y-2 mb-4"></div>
+        <div id="quiz-feedback" class="text-center font-bold text-xs md:text-sm hidden p-2.5 rounded-lg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bookmarks Drawer Modal -->
+  <div id="bookmarks-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 hidden pointer-events-auto">
+    <div class="glass-panel-gold rounded-2xl border-2 border-palace-gold max-w-md w-full p-5 shadow-2xl relative max-h-[80vh] flex flex-col">
+      <button id="close-bookmarks" class="absolute top-4 right-4 text-palace-brightgold/70 hover:text-palace-brightgold text-xl">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="flex items-center gap-2 mb-4 border-b border-palace-gold/30 pb-3">
+        <i class="fa-solid fa-heart text-rose-400 text-xl"></i>
+        <h2 class="font-calli text-2xl text-palace-brightgold">我收藏的紫禁城宮殿</h2>
+      </div>
+
+      <div id="bookmarks-list" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+    </div>
+  </div>
+
+  <!-- Main JavaScript Logic Engine -->
+  <script>
+    /* =========================================================================
+       1. DATABASE: 15 POIs + Interactive Characters & Multi-stage Dialogues
+       ========================================================================= */
+    const POI_DATABASE = [
+      {
+        id: 'taihe',
+        name: '太和殿',
+        region: '外朝中路',
+        character: '雍正帝 (Yongzheng)',
+        avatar: '👑',
+        quote: '「朕坐擁天下，卻難求一真正懂得朕心之人。」',
+        desc: '紫禁城最高大莊嚴之大殿，俗稱金鑾殿。皇帝舉行登基大典與朝賀大典之地，象徵至高無上的皇權。',
+        extra: ['皇帝登基與冊立皇后重典處', '重檐廡殿頂頂級規制', '御道與雲龍階石前殿'],
+        coords: { x: 0, y: 0, z: 22 },
+        color: 0xD4AF37,
+        roofType: 'hip',
+        dialogues: [
+          { text: '「臣妾叩見皇上，願皇上萬歲萬萬歲。」', favor: 10, reply: '「愛卿平身。這紫禁城江山，朕與你同賞。」' },
+          { text: '「皇上今日批閱奏折辛苦，可要用些百合蓮子湯？」', favor: 15, reply: '「還是你貼心，朕心甚慰。」' },
+          { text: '「後宮姐妹眾多，皇上可莫要偏心華妃娘娘才好。」', favor: -10, reply: '「後宮之事，朕自有分寸，不必你來干涉。」' }
+        ]
+      },
+      {
+        id: 'yangxin',
+        name: '養心殿',
+        region: '內廷乾清宮西側',
+        character: '雍正帝 / 蘇培盛',
+        avatar: '📜',
+        quote: '「朕批閱奏折累了，宣甄嬛前來對弈。」',
+        desc: '清朝皇帝日常處理政務與寢宮所在地。殿內懸掛「中正仁和」匾額，為皇上翻牌侍寢與召見大臣之重地。',
+        extra: ['皇帝日常居所與理政中心', '設有東暖閣與西暖閣', '後宮嬪妃進獻湯品要地'],
+        coords: { x: 0, y: 0, z: 2 },
+        color: 0xEAA812,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「臣妾願為皇上研墨添香。」', favor: 15, reply: '「好，研墨時且陪朕聊聊今日的政事與棋局。」' },
+          { text: '「聽聞皇上又在東暖閣召見年羹堯大將軍？」', favor: -10, reply: '「前朝軍國大事，豈是婦人家該問的？」' }
+        ]
+      },
+      {
+        id: 'yikun',
+        name: '翊坤宮',
+        region: '西六宮',
+        character: '年世蘭 (華妃)',
+        avatar: '🦚',
+        quote: '「賤人就是矯情！賞她一丈紅！」',
+        desc: '華妃年世蘭盛寵時期的豪華寢宮。華妃在此掌管後宮大權，陳設極其奢華，並焚燒獨特之歡宜香。',
+        extra: ['獨特歡宜香（含麝香）發源地', '擺設極品翡翠與金銀器皿', '罰跪甄嬛致其小產之歷史舞台'],
+        coords: { x: -28, y: 0, z: -10 },
+        color: 0x9E1B1B,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「臣妾特來向華妃娘娘請安，娘娘風姿綽約，冠絕後宮。」', favor: 15, reply: '「算你識相！本宮的貌美與盛寵，豈是那些賤人能比的？」' },
+          { text: '「娘娘宮裡的歡宜香氣味奇特，不知有何妙用？」', favor: -15, reply: '「放肆！歡宜香乃皇上御賜獨一份的恩典，你也敢妄加評論？」' },
+          { text: '「娘娘，祺嬪近日在皇面前頗為得意呢...」', favor: 10, reply: '「哼！那個蠢貨也敢在本宮面前賣弄？」' }
+        ]
+      },
+      {
+        id: 'suiyu',
+        name: '碎玉軒',
+        region: '宮廷東南偏僻角',
+        character: '甄嬛 (熹貴妃)',
+        avatar: '🪷',
+        quote: '「這幾年的情愛與時光，終究是錯付了！」',
+        desc: '甄嬛初入宮時分封居住之處。庭院內種有茂密竹林與桂花樹，並設有小戲台。見證甄嬛從避寵到盛寵的滄桑歲月。',
+        extra: ['庭院設有小戲台與修竹', '甄嬛在此避寵裝病結交木槿汐', '杏花微雨初遇皇上之起點'],
+        coords: { x: 28, y: 0, z: -25 },
+        color: 0x2E8B57,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「姐姐可願與妹妹一同步至御花園賞杏花吹笛？」', favor: 20, reply: '「『逆風如解意，容易莫摧殘』，妹妹若有雅興，我自當奉陪。」' },
+          { text: '「在這後宮之中，究竟該如何方能保全自身與家族？」', favor: 15, reply: '「人情世故皆是學問，在這後宮裡，容得下忍，方能站得穩。」' },
+          { text: '「聽聞姐姐與果郡王私下交情匪淺...」', favor: -20, reply: '「此乃無稽之談！妹妹說話還請三思，免得招來殺身之禍！」' }
+        ]
+      },
+      {
+        id: 'jingren',
+        name: '景仁宮',
+        region: '東六宮',
+        character: '烏拉那拉·宜修 (皇后)',
+        avatar: '👸',
+        quote: '「臣妾做不到啊！」',
+        desc: '皇后宜修之寢宮。表面莊嚴祥和、墨香陣陣，實則為後宮無數陰謀、墮胎秘術與紅顏殞落的風暴中心。',
+        extra: ['皇后宜修掌管後宮之大本營', '宮內常備東阿阿膠與合歡湯', '宜修最終被皇上軟禁於此至死'],
+        coords: { x: -28, y: 0, z: 10 },
+        color: 0xC8A2C8,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「臣妾謹遵皇后娘娘教誨，定當恪守後宮規矩。」', favor: 15, reply: '「後宮之中，最重要的就是規矩與平衡。本宮甚是欣慰。」' },
+          { text: '「娘娘手藝精湛，這東阿阿膠調配得極好。」', favor: 10, reply: '「這是本宮特意為後宮姐妹調理氣血準備的，你多喝些。」' },
+          { text: '「娘娘，當年純元皇后的舊事...」', favor: -25, reply: '「閉嘴！純元姐姐的名諱豈是你能隨意提及的？放肆！」' }
+        ]
+      },
+      {
+        id: 'yanxi',
+        name: '延禧宮',
+        region: '東六宮東南',
+        character: '安陵容 (鸝妃)',
+        avatar: '🐦',
+        quote: '「這條命，這口氣，我從來由不得自己。」',
+        desc: '安陵容居住之寢宮。安陵容在此苦練冰嬉舞蹈、調製暖情香，最終吃苦杏仁自盡於此。',
+        extra: ['安陵容苦練冰嬉與調香密室', '夏冬春在此被賞賜「一丈紅」', '後宮最具悲劇色彩之宮殿'],
+        coords: { x: 28, y: 0, z: 10 },
+        color: 0x4682B4,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「陵容妹妹調製的香囊氣味高雅，令人心曠神怡。」', favor: 20, reply: '「姐姐過獎了...我身世卑微，也唯有這點調香微末技藝能博大家一笑了。」' },
+          { text: '「聽聞妹妹近來在太液池苦練冰嬉，可要多加保重身子。」', favor: 15, reply: '「多謝姐姐關心。若不爭這口氣，我又能如何生存呢？」' }
+        ]
+      },
+      {
+        id: 'yuhua',
+        name: '御花園',
+        region: '內廷最北端',
+        character: '甄嬛 / 果郡王 (允禮)',
+        avatar: '🪕',
+        quote: '「山有木兮木有枝，心悅君兮君不知。」',
+        desc: '紫禁城內宮廷花園，內有千秋亭、堆秀山、欽安殿與古柏奇石。甄嬛與果郡王在此多次偶遇，吹笛賦詩。',
+        extra: ['建有千秋亭、萬春亭與堆秀山', '太湖石假山與百年古柏參天', '甄嬛與果郡王吹笛相會之地'],
+        coords: { x: 0, y: 0, z: -32 },
+        color: 0x3CB371,
+        roofType: 'pavilion',
+        dialogues: [
+          { text: '「這堆秀山前古木參天，古笛悠揚，真是好景緻。」', favor: 15, reply: '「宮中歲月漫長，唯有這花草笛聲能給人心靈一絲慰藉。」' }
+        ]
+      },
+      {
+        id: 'yimei',
+        name: '倚梅園',
+        region: '御花園西北角',
+        character: '甄嬛 / 余鶯兒',
+        avatar: '🌸',
+        quote: '「逆風如解意，容易莫摧殘。」',
+        desc: '滿園紅梅盛開之地。除夕雪夜甄嬛在此許願並懸掛剪紙小像，皇上隔梅花聞聲尋人，余鶯兒冒名頂替。',
+        extra: ['除夕雪夜祈福懸掛小像處', '滿園紅梅與臘梅傲雪怒放', '余鶯兒冒名得寵之關鍵景點'],
+        coords: { x: -12, y: 0, z: -44 },
+        color: 0xDC143C,
+        roofType: 'garden',
+        dialogues: [
+          { text: '「梅花傲雪怒放，願歲歲年年人平安。」', favor: 15, reply: '「逆風如解意，容易莫摧殘...雪夜紅梅最是動人。」' }
+        ]
+      },
+      {
+        id: 'shoukang',
+        name: '壽康宮',
+        region: '外西路',
+        character: '太后 (烏雅氏)',
+        avatar: '👵',
+        quote: '「凡事太過，便是禍害；後宮最要緊的就是平衡。」',
+        desc: '太后烏雅氏之寢宮。太后在此居中斡旋，力保烏拉那拉氏與年氏的後宮勢力平衡。',
+        extra: ['皇太后處置後宮大事處', '常年彌漫檀香與藥草氣息', '維護家族榮辱與後宮平衡'],
+        coords: { x: -35, y: 0, z: -30 },
+        color: 0x8B4513,
+        roofType: 'hip',
+        dialogues: [
+          { text: '「臣妾給太后娘娘請安，太后福壽安康。」', favor: 15, reply: '「好孩子，後宮安定，皇帝才能安心理政。你且謹記。」' }
+        ]
+      },
+      {
+        id: 'penglai',
+        name: '圓明園·蓬萊洲',
+        region: '宮外園林湖心島',
+        character: '甄嬛 / 果郡王',
+        avatar: '🏝️',
+        quote: '「只要能與你相守，即便是幽居蓬萊洲亦是天堂。」',
+        desc: '圓明園湖心避暑勝地。甄嬛曾在此避禍幽居，與果郡王度過了一段遠離後宮爭鬥的清幽時光。',
+        extra: ['四面環水之湖心幽靜小島', '避開後宮政治風暴之避風港', '琴簫合奏之絕美仙境'],
+        coords: { x: 45, y: 0, z: -42 },
+        color: 0x008080,
+        roofType: 'water',
+        dialogues: [
+          { text: '「湖清風爽，在此遠離紅塵紛擾極好。」', favor: 20, reply: '「若能永遠留在此處，倒也不失為一種幸福。」' }
+        ]
+      },
+      {
+        id: 'chuxiu',
+        name: '儲秀宮',
+        region: '西六宮',
+        character: '祺嬪 (管文鴛) / 欣貴人',
+        avatar: '🐱',
+        quote: '「臣妾夢見夢裡有隻貓，嚇得臣妾心口直跳！」',
+        desc: '祺嬪管文鴛居住之宮殿。祺嬪性格嬌縱狂妄，曾在此假裝夢魘爭寵。',
+        extra: ['祺嬪與欣貴人同住處', '擺放大量瑪瑙與雕花屏風', '祺嬪假裝夢魘爭寵場合'],
+        coords: { x: -40, y: 0, z: -5 },
+        color: 0xDAA520,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「祺嬪娘娘這身珠翠當真是華麗奪目。」', favor: 15, reply: '「那是自然！皇上最喜歡本宮穿這身了！」' }
+        ]
+      },
+      {
+        id: 'shenwu',
+        name: '神武門',
+        region: '紫禁城北門',
+        character: '敬妃 / 溫實初',
+        avatar: '⛩️',
+        quote: '「這宮裡的磚，每一塊我都撫摸過無數遍。」',
+        desc: '紫禁城後門（北門），秀女進宮與出宮通口。高高牆垣象徵著宮牆深鎖。',
+        extra: ['秀女入宮選秀入口', '重檐歇山頂城樓', '象徵後宮女性對自由的嚮往'],
+        coords: { x: 0, y: 0, z: -60 },
+        color: 0xB22222,
+        roofType: 'gate',
+        dialogues: [
+          { text: '「站在這高高的門樓下，只覺得這宮牆好高好冷。」', favor: 15, reply: '「一入宮門深似海，這磚這牆，冷暖唯有自己知曉。」' }
+        ]
+      },
+      {
+        id: 'wumen',
+        name: '午門',
+        region: '紫禁城正門',
+        character: '宮廷侍衛 / 年羹堯',
+        avatar: '🛡️',
+        quote: '「推出去，午門斬首！」',
+        desc: '紫禁城正門，由凹字形城台與五座城樓組成。皇帝頒佈詔書與威嚴懲處大臣重地。',
+        extra: ['紫禁城最雄偉門戶結構', '皇帝宣詔與慶典場所', '威嚴無雙之統治象徵'],
+        coords: { x: 0, y: 0, z: 42 },
+        color: 0x800000,
+        roofType: 'gate',
+        dialogues: [
+          { text: '「午門雄偉肅穆，令人肅然起敬。」', favor: 10, reply: '「天子門戶，皇權尊嚴所在！」' }
+        ]
+      },
+      {
+        id: 'taiyi',
+        name: '太醫院',
+        region: '外朝東路',
+        character: '溫實初 (Physician Wen)',
+        avatar: '🩺',
+        quote: '「實初哥哥，只要是你給的藥，我都信。」',
+        desc: '宮廷御醫研製解毒藥劑、養胎湯藥與調配香料之處。溫實初在此嘔心瀝血保護甄嬛與沈眉莊。',
+        extra: ['御醫研究脈象與湯藥重地', '儲藏野生人參、阿膠與草藥', '溫實初研製神農香囊處'],
+        coords: { x: 38, y: 0, z: 28 },
+        color: 0x8FBC8F,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「溫太醫醫術高明，近來可有研製新的養神安胎方子？」', favor: 15, reply: '「小臣定當竭盡全力，調配溫補湯劑，保小主鳳體安康。」' }
+        ]
+      },
+      {
+        id: 'xianfu',
+        name: '咸福宮',
+        region: '西六宮',
+        character: '沈眉莊 (惠貴人)',
+        avatar: '🌼',
+        quote: '「寧可枝頭抱香死，不曾吹落北風中。」',
+        desc: '沈眉莊生前居住之處。端莊典雅，庭院種滿菊花。沈眉莊在此傲骨挺立，看透皇上薄情後甘於對飲。',
+        extra: ['沈眉莊端莊清修之寧靜宮殿', '庭院滿植傲霜珍品菊花', '沈眉莊遭遇假孕事件場所'],
+        coords: { x: -22, y: 0, z: 28 },
+        color: 0x48D1CC,
+        roofType: 'gable',
+        dialogues: [
+          { text: '「姐姐這庭院裡的菊花競相開放，清雅脫俗。」', favor: 20, reply: '「『寧可枝頭抱香死，不曾吹落北風中』。做人若能如菊，方不辜負這清白一生。」' },
+          { text: '「姐姐近來可曾去養心殿看望皇上？」', favor: -15, reply: '「皇上的情意薄如朝露，我又何必自討沒趣呢...」' }
+        ]
+      }
+    ];
+
+    const QUIZ_DATABASE = [
+      {
+        q: '華妃賜給宮人的「歡宜香」，其暗藏的玄機是什麼？',
+        options: ['含有麝香致人不孕', '含有劇毒致人昏迷', '含有海棠花香催眠', '純粹香氣無任何效果'],
+        answer: 0,
+        explain: '皇上與太后因忌憚年羹堯與年氏一族勢力過大，特賜歡宜香，其中暗含麝香，致使華妃終身無法懷孕。'
+      },
+      {
+        q: '「賤人就是矯情」這句經典名言出自劇中哪一位角色？',
+        options: ['皇后宜修', '華妃年世蘭', '甄嬛', '沈眉莊'],
+        answer: 1,
+        explain: '此為華妃年世蘭在翊坤宮對甄嬛與後宮爭寵行為的經典斥責台詞。'
+      },
+      {
+        q: '甄嬛初遇皇上（當時皇上自稱果郡王）地點是在何處？',
+        options: ['碎玉軒戲台', '倚梅園雪地', '御花園杏花吹雨鞦韆處', '養心殿東暖閣'],
+        answer: 2,
+        explain: '甄嬛在御花園杏花吹雨之際吹笛，皇上自稱果郡王與其相遇，展開了兩人的情緣。'
+      },
+      {
+        q: '「臣妾做不到啊！」是皇后宜修在哪裡向皇上哭訴的場面？',
+        options: ['景仁宮正殿', '養心殿對質', '翊坤宮後院', '延禧宮冰場'],
+        answer: 1,
+        explain: '皇后宜修在養心殿面對剪秋下毒案及昔日殺害純元皇后罪行敗露時，向皇上哭喊出的經典台詞。'
+      },
+      {
+        q: '安陵容為了重新獲得皇上恩寵，在延禧宮苦練了何種技藝？',
+        options: ['刺繡與古箏', '冰嬉與穿花飛燕舞', '烹飪與點茶', '騎射與摔跤'],
+        answer: 1,
+        explain: '安陵容靠吃息肌丸瘦身，苦練冰嬉舞蹈，在太液池上舞姿驚艷眾人重獲恩寵。'
+      }
+    ];
+
+    /* =========================================================================
+       2. GLOBAL STATE & LOCAL STORAGE
+       ========================================================================= */
+    const state = {
+      visited: JSON.parse(localStorage.getItem('zh_visited_spots') || '[]'),
+      saved: JSON.parse(localStorage.getItem('zh_saved_spots') || '[]'),
+      favorability: JSON.parse(localStorage.getItem('zh_favorability') || '{}'),
+      dayMode: true,
+      audioEnabled: false,
+      currentPOI: null,
+      viewMode: 'exterior', // 'exterior' or 'interior'
+      quizIndex: 0,
+      quizScore: 0
+    };
+
+    /* =========================================================================
+       3. THREE.JS 3D SCENE & ENGINE SETUP
+       ========================================================================= */
+    let scene, camera, renderer, controls;
+    let poiGroup, markerElements = [];
+    let lights = {}, npcGroup, characterMeshesMap = {};
+    let interiorGroup, particleSystem;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function init3D() {
+      const container = document.getElementById('canvas-container');
+
+      // Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87CEEB);
+      scene.fog = new THREE.FogExp2(0x87CEEB, 0.005);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 38, 65);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
+      container.appendChild(renderer.domElement);
+
+      // Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2 - 0.05;
+      controls.minDistance = 6;
+      controls.maxDistance = 120;
+      controls.target.set(0, 0, 0);
+
+      // Lighting Setup
+      setupLighting();
+
+      // World Geometry Build
+      buildPalaceGrounds();
+
+      // 3D Interior Scene Model Setup (Hidden initially)
+      buildInteriorRoom();
+
+      // Atmospheric Weather Particles (Petals / Snow)
+      createParticleSystem();
+
+      // Screen projected HTML POI Markers
+      create3DMarkers();
+
+      // Walkable Emperor NPC
+      createWalkingNPC();
+
+      // Event Listeners
+      window.addEventListener('resize', onWindowResize);
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+
+      // Render Loop
+      animate();
+    }
+
+    /* =========================================================================
+       4. LIGHTING & DAY/NIGHT SYSTEM
+       ========================================================================= */
+    function setupLighting() {
+      lights.ambient = new THREE.AmbientLight(0xffffff, 0.75);
+      scene.add(lights.ambient);
+
+      lights.sun = new THREE.DirectionalLight(0xfffaed, 1.2);
+      lights.sun.position.set(40, 60, 30);
+      lights.sun.castShadow = true;
+      lights.sun.shadow.mapSize.width = 2048;
+      lights.sun.shadow.mapSize.height = 2048;
+      lights.sun.shadow.camera.near = 0.5;
+      lights.sun.shadow.camera.far = 200;
+      const d = 60;
+      lights.sun.shadow.camera.left = -d;
+      lights.sun.shadow.camera.right = d;
+      lights.sun.shadow.camera.top = d;
+      lights.sun.shadow.camera.bottom = -d;
+      lights.sun.shadow.bias = -0.0005;
+      scene.add(lights.sun);
+
+      lights.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.3);
+      scene.add(lights.hemi);
+    }
+
+    function setDayNightMode(isDay) {
+      state.dayMode = isDay;
+      const duration = 1.5;
+
+      const bgTarget = isDay ? new THREE.Color(0x87CEEB) : new THREE.Color(0x0b0f19);
+      gsap.to(scene.background, { r: bgTarget.r, g: bgTarget.g, b: bgTarget.b, duration });
+      gsap.to(scene.fog.color, { r: bgTarget.r, g: bgTarget.g, b: bgTarget.b, duration });
+
+      if (isDay) {
+        gsap.to(lights.ambient, { intensity: 0.75, duration });
+        gsap.to(lights.sun, { intensity: 1.2, duration });
+        gsap.to(lights.sun.position, { x: 40, y: 60, z: 30, duration });
+      } else {
+        gsap.to(lights.ambient, { intensity: 0.2, duration });
+        gsap.to(lights.sun, { intensity: 0.2, duration });
+        gsap.to(lights.sun.position, { x: -20, y: 40, z: -30, duration });
+      }
+
+      document.getElementById('icon-daynight').className = isDay ? 'fa-solid fa-sun text-base' : 'fa-solid fa-moon text-base text-amber-300';
+    }
+
+    /* =========================================================================
+       5. LOW-POLY PALACE ARCHITECTURE & INTERIOR ROOM BUILDER
+       ========================================================================= */
+    function buildPalaceGrounds() {
+      // Main Ground Base
+      const groundGeo = new THREE.PlaneGeometry(160, 160);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x22261f, roughness: 0.9 });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // Pathways
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0x7A746A, roughness: 0.8 });
+      const mainPath = new THREE.Mesh(new THREE.PlaneGeometry(12, 140), pathMat);
+      mainPath.rotation.x = -Math.PI / 2;
+      mainPath.position.y = 0.02;
+      mainPath.receiveShadow = true;
+      scene.add(mainPath);
+
+      const crossPath = new THREE.Mesh(new THREE.PlaneGeometry(120, 10), pathMat);
+      crossPath.rotation.x = -Math.PI / 2;
+      crossPath.position.y = 0.02;
+      crossPath.receiveShadow = true;
+      scene.add(crossPath);
+
+      // Outer Red Walls
+      buildOuterWalls();
+
+      // Build 15 Palaces
+      POI_DATABASE.forEach(poi => createPalaceBuilding(poi));
+    }
+
+    function createPalaceBuilding(poi) {
+      const group = new THREE.Group();
+      group.position.set(poi.coords.x, poi.coords.y, poi.coords.z);
+      group.userData = poi;
+
+      // 1. Terrace Base
+      const terrace = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 1.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0xEAE6DF, roughness: 0.5 })
+      );
+      terrace.position.y = 0.6;
+      terrace.castShadow = true;
+      terrace.receiveShadow = true;
+      group.add(terrace);
+
+      // 2. Main Wall Base
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x8F1D1D, roughness: 0.6 });
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(8.5, 3.2, 6.5), wallMat);
+      wall.position.y = 2.8;
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      group.add(wall);
+
+      // Front Lattice Door
+      const door = new THREE.Mesh(
+        new THREE.PlaneGeometry(4, 2.2),
+        new THREE.MeshStandardMaterial({ color: 0x3D0C0C, roughness: 0.4 })
+      );
+      door.position.set(0, 2.3, 3.26);
+      group.add(door);
+
+      // 3. Pillars
+      const pillarMat = new THREE.MeshStandardMaterial({ color: 0x731111, roughness: 0.4 });
+      const pillarGeo = new THREE.CylinderGeometry(0.2, 0.2, 3.2, 12);
+      [-3.8, -1.8, 1.8, 3.8].forEach(px => {
+        const p = new THREE.Mesh(pillarGeo, pillarMat);
+        p.position.set(px, 2.8, 3.1);
+        p.castShadow = true;
+        group.add(p);
+      });
+
+      // 4. Roof
+      const roofMat = new THREE.MeshStandardMaterial({ color: poi.color || 0xD4AF37, roughness: 0.3, metalness: 0.2 });
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(8, 2.6, 4), roofMat);
+      roof.position.y = 5.0;
+      roof.rotation.y = Math.PI / 4;
+      roof.scale.set(1.3, 0.9, 1.05);
+      roof.castShadow = true;
+      group.add(roof);
+
+      // Plaque Mesh
+      const plaqueMesh = createPlaqueMesh(poi.name);
+      plaqueMesh.position.set(0, 3.9, 3.32);
+      group.add(plaqueMesh);
+
+      // 3D Consort Character Model residing inside/outside palace
+      const charModel = createConsortModel(poi);
+      charModel.position.set(2.2, 1.2, 3.8); // Sitting/standing by the entrance porch
+      group.add(charModel);
+      characterMeshesMap[poi.id] = charModel;
+
+      scene.add(group);
+    }
+
+    function createPlaqueMesh(text) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 96;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#0F2A4A';
+      ctx.fillRect(0, 0, 256, 96);
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = '#D4AF37';
+      ctx.strokeRect(4, 4, 248, 88);
+
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 42px "Noto Serif TC", serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 128, 48);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      return new THREE.Mesh(
+        new THREE.PlaneGeometry(1.8, 0.68),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+      );
+    }
+
+    function createConsortModel(poi) {
+      const charGroup = new THREE.Group();
+      charGroup.userData = { isCharacter: true, poi };
+
+      // Silk Silk Robe Body
+      const robeGeo = new THREE.CylinderGeometry(0.35, 0.55, 1.6, 12);
+      const robeMat = new THREE.MeshStandardMaterial({ color: poi.color || 0xDC143C, roughness: 0.5 });
+      const robe = new THREE.Mesh(robeGeo, robeMat);
+      robe.position.y = 0.8;
+      robe.castShadow = true;
+      charGroup.add(robe);
+
+      // Head
+      const headGeo = new THREE.SphereGeometry(0.3, 12, 12);
+      const headMat = new THREE.MeshStandardMaterial({ color: 0xFFDBAC });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 1.8;
+      charGroup.add(head);
+
+      // Qing Dynasty Headdress (大拉翅 / 旗頭)
+      const hatGeo = new THREE.BoxGeometry(0.9, 0.4, 0.15);
+      const hatMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+      const hat = new THREE.Mesh(hatGeo, hatMat);
+      hat.position.set(0, 2.15, 0);
+      charGroup.add(hat);
+
+      // Gold Hairpin Ornament
+      const pin = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.8 })
+      );
+      pin.position.set(0.35, 2.2, 0);
+      charGroup.add(pin);
+
+      return charGroup;
+    }
+
+    /* =========================================================================
+       6. 3D INTERIOR ROOM SCENE (宮殿內部)
+       ========================================================================= */
+    function buildInteriorRoom() {
+      interiorGroup = new THREE.Group();
+      interiorGroup.position.set(0, -100, 0); // Isolated underground interior studio
+
+      // Interior Room Enclosure
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x4A2511, roughness: 0.4 }) // Wooden Floor
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      interiorGroup.add(floor);
+
+      // Red Imperial Carpet
+      const carpet = new THREE.Mesh(
+        new THREE.PlaneGeometry(6, 12),
+        new THREE.MeshStandardMaterial({ color: 0x8F1D1D, roughness: 0.8 })
+      );
+      carpet.rotation.x = -Math.PI / 2;
+      carpet.position.set(0, 0.02, 1);
+      interiorGroup.add(carpet);
+
+      // Back Wall
+      const backWall = new THREE.Mesh(
+        new THREE.PlaneGeometry(16, 8),
+        new THREE.MeshStandardMaterial({ color: 0x6E1717, roughness: 0.7 })
+      );
+      backWall.position.set(0, 4, -8);
+      interiorGroup.add(backWall);
+
+      // Dragon Throne / Lounger Bed (榻)
+      const throneBase = new THREE.Mesh(
+        new THREE.BoxGeometry(4, 1.2, 2.2),
+        new THREE.MeshStandardMaterial({ color: 0xD4AF37, metalness: 0.4, roughness: 0.3 })
+      );
+      throneBase.position.set(0, 0.6, -6.5);
+      throneBase.castShadow = true;
+      interiorGroup.add(throneBase);
+
+      // Screen (屏風)
+      const screenMat = new THREE.MeshStandardMaterial({ color: 0x2E1A0E, roughness: 0.5 });
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(7, 4.5, 0.2), screenMat);
+      screen.position.set(0, 2.25, -7.5);
+      interiorGroup.add(screen);
+
+      // Incense Burner (香爐)
+      const burner = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.4, 0.6, 12),
+        new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.8 })
+      );
+      burner.position.set(-2.5, 0.3, -4);
+      interiorGroup.add(burner);
+
+      // Interior Soft Ambient Light
+      const intLight = new THREE.PointLight(0xFFD700, 1.2, 20);
+      intLight.position.set(0, 5, -2);
+      interiorGroup.add(intLight);
+
+      scene.add(interiorGroup);
+    }
+
+    /* =========================================================================
+       7. ATMOSPHERIC WEATHER PARTICLES (落花 / 飛雪)
+       ========================================================================= */
+    function createParticleSystem() {
+      const particleCount = 200;
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(particleCount * 3);
+
+      for (let i = 0; i < particleCount * 3; i += 3) {
+        positions[i] = (Math.random() - 0.5) * 160;
+        positions[i + 1] = Math.random() * 50;
+        positions[i + 2] = (Math.random() - 0.5) * 160;
+      }
+
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      const material = new THREE.PointsMaterial({
+        color: 0xFFB7C5, // Cherry Blossom Pink
+        size: 0.6,
+        transparent: true,
+        opacity: 0.8
+      });
+
+      particleSystem = new THREE.Points(geometry, material);
+      scene.add(particleSystem);
+    }
+
+    function animateParticles(delta) {
+      if (!particleSystem) return;
+      const positions = particleSystem.geometry.attributes.position.array;
+
+      for (let i = 1; i < positions.length; i += 3) {
+        positions[i] -= delta * 4; // Fall downwards
+        if (positions[i] < 0) positions[i] = 50; // Reset height
+      }
+      particleSystem.geometry.attributes.position.needsUpdate = true;
+    }
+
+    /* =========================================================================
+       8. OUTWALLS & MARKERS
+       ========================================================================= */
+    function buildOuterWalls() {
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x8F1D1D, roughness: 0.7 });
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.3 });
+
+      const wallConfigs = [
+        { w: 150, h: 4, d: 2, x: 0, z: -70 },
+        { w: 150, h: 4, d: 2, x: 0, z: 70 },
+        { w: 2, h: 4, d: 140, x: -70, z: 0 },
+        { w: 2, h: 4, d: 140, x: 70, z: 0 }
+      ];
+
+      wallConfigs.forEach(c => {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), wallMat);
+        wall.position.set(c.x, c.h / 2, c.z);
+        scene.add(wall);
+
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(c.w + 0.4, 0.6, c.d + 0.4), roofMat);
+        cap.position.set(c.x, c.h + 0.3, c.z);
+        scene.add(cap);
+      });
+    }
+
+    function create3DMarkers() {
+      const container = document.getElementById('markers-container');
+      container.innerHTML = '';
+      markerElements = [];
+
+      POI_DATABASE.forEach(poi => {
+        const div = document.createElement('div');
+        div.className = 'poi-marker pointer-events-auto flex flex-col items-center group';
+        div.dataset.id = poi.id;
+
+        const isVisited = state.visited.includes(poi.id);
+
+        div.innerHTML = `
+          <div class="px-2.5 py-1 rounded-full glass-panel border border-palace-gold/60 text-palace-brightgold text-xs font-bold shadow-2xl flex items-center gap-1.5 backdrop-blur-md group-hover:bg-palace-red group-hover:text-white transition-all duration-300">
+            <span class="w-2 h-2 rounded-full ${isVisited ? 'bg-emerald-400' : 'bg-amber-400 animate-ping'}"></span>
+            <span>${poi.name}</span>
+          </div>
+          <div class="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-palace-gold -mt-[1px]"></div>
+        `;
+
+        div.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectPOI(poi);
+        });
+
+        container.appendChild(div);
+        markerElements.push({ element: div, coords: poi.coords, poi });
+      });
+    }
+
+    function update3DMarkers() {
+      if (state.viewMode === 'interior') {
+        markerElements.forEach(item => item.element.style.opacity = '0');
+        return;
+      }
+
+      const tempVec = new THREE.Vector3();
+      markerElements.forEach(item => {
+        tempVec.set(item.coords.x, item.coords.y + 7.5, item.coords.z);
+        tempVec.project(camera);
+
+        if (tempVec.z > 1) {
+          item.element.style.opacity = '0';
+          item.element.style.pointerEvents = 'none';
+          return;
+        }
+
+        const x = (tempVec.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(tempVec.y * 0.5) + 0.5) * window.innerHeight;
+
+        item.element.style.left = `${x}px`;
+        item.element.style.top = `${y}px`;
+        item.element.style.opacity = '1';
+        item.element.style.pointerEvents = 'auto';
+      });
+    }
+
+    /* =========================================================================
+       9. ANIMATED WALKING NPC (EMPEROR)
+       ========================================================================= */
+    const npcWaypoints = [
+      { x: 0, z: 22 },
+      { x: 0, z: 2 },
+      { x: -28, z: -10 },
+      { x: 0, z: -32 },
+      { x: 28, z: -25 }
+    ];
+    let currentWaypointIdx = 0, npcAnimTime = 0;
+
+    function createWalkingNPC() {
+      npcGroup = new THREE.Group();
+
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4, 0.6, 1.8, 12),
+        new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.4 })
+      );
+      body.position.y = 0.9;
+      npcGroup.add(body);
+
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 12, 12),
+        new THREE.MeshStandardMaterial({ color: 0xFFDBAC })
+      );
+      head.position.y = 2.0;
+      npcGroup.add(head);
+
+      const hat = new THREE.Mesh(
+        new THREE.ConeGeometry(0.5, 0.4, 12),
+        new THREE.MeshStandardMaterial({ color: 0x8F1D1D })
+      );
+      hat.position.y = 2.35;
+      npcGroup.add(hat);
+
+      npcGroup.position.set(npcWaypoints[0].x, 0, npcWaypoints[0].z);
+      scene.add(npcGroup);
+    }
+
+    function animateNPC(delta) {
+      if (!npcGroup || state.viewMode === 'interior') return;
+
+      const target = npcWaypoints[currentWaypointIdx];
+      const pos = npcGroup.position;
+      const dx = target.x - pos.x;
+      const dz = target.z - pos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist < 0.5) {
+        currentWaypointIdx = (currentWaypointIdx + 1) % npcWaypoints.length;
+      } else {
+        const speed = 3.5 * delta;
+        pos.x += (dx / dist) * speed;
+        pos.z += (dz / dist) * speed;
+
+        npcGroup.rotation.y = Math.atan2(dx, dz);
+        npcAnimTime += delta * 8;
+        npcGroup.position.y = Math.abs(Math.sin(npcAnimTime)) * 0.15;
+      }
+    }
+
+    /* =========================================================================
+       10. CAMERA ANIMATIONS & PALACE INTERIOR TRANSITION
+       ========================================================================= */
+    function selectPOI(poi) {
+      state.currentPOI = poi;
+
+      if (!state.visited.includes(poi.id)) {
+        state.visited.push(poi.id);
+        localStorage.setItem('zh_visited_spots', JSON.stringify(state.visited));
+        updateProgressUI();
+        create3DMarkers();
+      }
+
+      gsap.to(camera.position, {
+        x: poi.coords.x + 12,
+        y: poi.coords.y + 10,
+        z: poi.coords.z + 18,
+        duration: 1.8,
+        ease: 'power2.inOut'
+      });
+
+      gsap.to(controls.target, {
+        x: poi.coords.x,
+        y: poi.coords.y + 2,
+        z: poi.coords.z,
+        duration: 1.8,
+        ease: 'power2.inOut',
+        onUpdate: () => controls.update()
+      });
+
+      playChimeSFX();
+      openSidePanel(poi);
+    }
+
+    function enterInteriorView() {
+      if (!state.currentPOI) return;
+      state.viewMode = 'interior';
+
+      // Update Floating Banner
+      document.getElementById('interior-title-text').innerText = `${state.currentPOI.name} 內部`;
+      document.getElementById('interior-back-banner').classList.remove('hidden');
+
+      closeSidePanel();
+
+      // Smooth Camera Fly-in to Interior Studio
+      gsap.to(camera.position, {
+        x: 0,
+        y: -97,
+        z: 4,
+        duration: 2.0,
+        ease: 'power3.inOut'
+      });
+
+      gsap.to(controls.target, {
+        x: 0,
+        y: -98,
+        z: -5,
+        duration: 2.0,
+        ease: 'power3.inOut',
+        onUpdate: () => controls.update()
+      });
+    }
+
+    function exitInteriorView() {
+      state.viewMode = 'exterior';
+      document.getElementById('interior-back-banner').classList.add('hidden');
+
+      if (state.currentPOI) {
+        selectPOI(state.currentPOI);
+      } else {
+        resetCamera();
+      }
+    }
+
+    function resetCamera() {
+      state.viewMode = 'exterior';
+      document.getElementById('interior-back-banner').classList.add('hidden');
+
+      gsap.to(camera.position, {
+        x: 0,
+        y: 38,
+        z: 65,
+        duration: 1.8,
+        ease: 'power2.inOut'
+      });
+
+      gsap.to(controls.target, {
+        x: 0,
+        y: 0,
+        z: 0,
+        duration: 1.8,
+        ease: 'power2.inOut',
+        onUpdate: () => controls.update()
+      });
+
+      closeSidePanel();
+    }
+
+    function onPointerDown(event) {
+      if (event.target.tagName !== 'CANVAS') return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      for (let i = 0; i < intersects.length; i++) {
+        let obj = intersects[i].object;
+        while (obj.parent && obj.parent !== scene) {
+          if (obj.userData && obj.userData.isCharacter) {
+            openCharacterDialogue(obj.userData.poi);
+            return;
+          }
+          if (obj.userData && obj.userData.id) {
+            selectPOI(obj.userData);
+            return;
+          }
+          obj = obj.parent;
+        }
+      }
+    }
+
+    /* =========================================================================
+       11. CHARACTER DIALOGUE & FAVORABILITY SYSTEM
+       ========================================================================= */
+    function openCharacterDialogue(poi) {
+      if (!poi) poi = state.currentPOI || POI_DATABASE[2];
+
+      const modal = document.getElementById('character-dialogue-modal');
+      document.getElementById('dialogue-avatar').innerText = poi.avatar || '👸';
+      document.getElementById('dialogue-char-name').innerText = poi.character;
+      document.getElementById('dialogue-speech-text').innerText = poi.quote;
+
+      const favorScore = state.favorability[poi.id] || 20;
+      updateFavorabilityUI(poi.id, favorScore);
+
+      const optionsContainer = document.getElementById('dialogue-options-container');
+      const choices = poi.dialogues || [
+        { text: '「向主子請安，願主子吉星高照。」', favor: 10, reply: '「算你懂事，本宮重重有賞。」' }
+      ];
+
+      optionsContainer.innerHTML = choices.map((c, idx) => `
+        <button onclick="handleDialogueChoice('${poi.id}', ${idx})" class="w-full text-left p-3 rounded-xl glass-panel hover:bg-palace-gold/30 border border-palace-gold/40 text-amber-100 text-xs font-bold transition flex items-center justify-between group">
+          <span>${c.text}</span>
+          <i class="fa-solid fa-chevron-right text-xs opacity-0 group-hover:opacity-100 transition text-palace-brightgold"></i>
+        </button>
+      `).join('');
+
+      modal.classList.remove('hidden');
+    }
+
+    function handleDialogueChoice(poiId, choiceIdx) {
+      const poi = POI_DATABASE.find(p => p.id === poiId);
+      if (!poi || !poi.dialogues) return;
+
+      const choice = poi.dialogues[choiceIdx];
+      let currentFavor = state.favorability[poiId] || 20;
+      currentFavor += choice.favor;
+      state.favorability[poiId] = Math.max(0, Math.min(100, currentFavor));
+      localStorage.setItem('zh_favorability', JSON.stringify(state.favorability));
+
+      updateFavorabilityUI(poiId, state.favorability[poiId]);
+
+      // Typewriter Effect for NPC Reply
+      const speechText = document.getElementById('dialogue-speech-text');
+      speechText.innerText = '';
+      let charIdx = 0;
+      const textToType = choice.reply;
+
+      const timer = setInterval(() => {
+        if (charIdx < textToType.length) {
+          speechText.innerText += textToType.charAt(charIdx);
+          charIdx++;
+        } else {
+          clearInterval(timer);
+        }
+      }, 40);
+
+      playChimeSFX();
+    }
+
+    function updateFavorabilityUI(poiId, score) {
+      let title = '萍水相逢';
+      if (score >= 80) title = '莫逆之交';
+      else if (score >= 50) title = '心腹知己';
+      else if (score >= 30) title = '漸入佳境';
+
+      document.getElementById('dialogue-favor-score').innerText = `❤️ 好感度: ${score}`;
+      document.getElementById('dialogue-favor-title').innerText = title;
+
+      document.getElementById('panel-favor-score').innerText = `好感度: ${score}`;
+      document.getElementById('panel-favor-title').innerText = title;
+    }
+
+    /* =========================================================================
+       12. SIDE PANEL & UI BINDINGS
+       ========================================================================= */
+    function openSidePanel(poi) {
+      const panel = document.getElementById('info-panel');
+      document.getElementById('panel-title').innerText = poi.name;
+      document.getElementById('panel-region').innerText = poi.region;
+      document.getElementById('panel-character').innerText = poi.character;
+      document.getElementById('panel-char-icon').innerText = poi.avatar || '👑';
+      document.getElementById('panel-quote').innerText = poi.quote;
+      document.getElementById('panel-desc').innerText = poi.desc;
+
+      const extraContainer = document.getElementById('panel-extra-info');
+      extraContainer.innerHTML = poi.extra.map(item => `
+        <div class="flex items-center gap-1.5 my-1">
+          <i class="fa-solid fa-feather-pointed text-palace-brightgold text-[10px]"></i>
+          <span>${item}</span>
+        </div>
+      `).join('');
+
+      const favorScore = state.favorability[poi.id] || 20;
+      updateFavorabilityUI(poi.id, favorScore);
+      updatePanelBookmarkBtn(poi.id);
+
+      panel.classList.remove('translate-x-full');
+    }
+
+    function closeSidePanel() {
+      document.getElementById('info-panel').classList.add('translate-x-full');
+    }
+
+    function updatePanelBookmarkBtn(id) {
+      const isSaved = state.saved.includes(id);
+      const icon = document.getElementById('icon-panel-bookmark');
+      const text = document.getElementById('text-panel-bookmark');
+
+      if (isSaved) {
+        icon.className = 'fa-solid fa-heart text-red-400';
+        text.innerText = '已收藏';
+      } else {
+        icon.className = 'fa-regular fa-heart';
+        text.innerText = '收藏';
+      }
+      updateBookmarkBadge();
+    }
+
+    function toggleBookmarkCurrentPOI() {
+      if (!state.currentPOI) return;
+      const id = state.currentPOI.id;
+      const idx = state.saved.indexOf(id);
+
+      if (idx > -1) {
+        state.saved.splice(idx, 1);
+      } else {
+        state.saved.push(id);
+      }
+
+      localStorage.setItem('zh_saved_spots', JSON.stringify(state.saved));
+      updatePanelBookmarkBtn(id);
+    }
+
+    function updateBookmarkBadge() {
+      const badge = document.getElementById('bookmark-count-badge');
+      badge.innerText = state.saved.length;
+      if (state.saved.length > 0) badge.classList.remove('hidden');
+      else badge.classList.add('hidden');
+    }
+
+    function updateProgressUI() {
+      const count = state.visited.length;
+      const total = POI_DATABASE.length;
+      const pct = Math.round((count / total) * 100);
+
+      document.getElementById('progress-text').innerText = `${count} / ${total}`;
+      document.getElementById('progress-bar-fill').style.width = `${pct}%`;
+    }
+
+    /* =========================================================================
+       13. SEARCH & BOOKMARKS
+       ========================================================================= */
+    function setupSearch() {
+      const input = document.getElementById('search-input');
+      const dropdown = document.getElementById('search-dropdown');
+      const clearBtn = document.getElementById('clear-search');
+
+      input.addEventListener('input', (e) => {
+        const query = e.target.value.trim().toLowerCase();
+        if (!query) {
+          dropdown.classList.add('hidden');
+          clearBtn.classList.add('hidden');
+          return;
+        }
+
+        clearBtn.classList.remove('hidden');
+        const matches = POI_DATABASE.filter(p => 
+          p.name.toLowerCase().includes(query) ||
+          p.character.toLowerCase().includes(query) ||
+          p.region.toLowerCase().includes(query)
+        );
+
+        if (matches.length > 0) {
+          dropdown.innerHTML = matches.map(m => `
+            <div class="p-3 hover:bg-palace-gold/30 cursor-pointer border-b border-palace-gold/20 flex justify-between items-center transition" onclick="onSearchSelect('${m.id}')">
+              <div>
+                <p class="font-bold text-palace-brightgold text-sm">${m.name}</p>
+                <p class="text-xs text-amber-100/70">${m.character} · ${m.region}</p>
+              </div>
+              <i class="fa-solid fa-chevron-right text-xs text-palace-gold"></i>
+            </div>
+          `).join('');
+          dropdown.classList.remove('hidden');
+        } else {
+          dropdown.innerHTML = `<div class="p-3 text-xs text-amber-200/60 text-center">未找到相關宮殿</div>`;
+          dropdown.classList.remove('hidden');
+        }
+      });
+
+      clearBtn.addEventListener('click', () => {
+        input.value = '';
+        dropdown.classList.add('hidden');
+        clearBtn.classList.add('hidden');
+      });
+    }
+
+    function onSearchSelect(id) {
+      const poi = POI_DATABASE.find(p => p.id === id);
+      if (poi) {
+        selectPOI(poi);
+        document.getElementById('search-dropdown').classList.add('hidden');
+      }
+    }
+
+    function openBookmarksModal() {
+      const modal = document.getElementById('bookmarks-modal');
+      const list = document.getElementById('bookmarks-list');
+
+      if (state.saved.length === 0) {
+        list.innerHTML = `<p class="text-center text-xs text-amber-200/60 py-8">尚無收藏景點，點擊景點面板中的❤️即可收藏！</p>`;
+      } else {
+        const savedPOIs = POI_DATABASE.filter(p => state.saved.includes(p.id));
+        list.innerHTML = savedPOIs.map(p => `
+          <div class="p-3 glass-panel rounded-xl border border-palace-gold/30 flex justify-between items-center hover:border-palace-gold transition">
+            <div>
+              <p class="font-bold text-palace-brightgold text-sm">${p.name}</p>
+              <p class="text-xs text-amber-100/70">${p.character}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="selectPOIById('${p.id}')" class="px-3 py-1 rounded-lg bg-palace-gold/20 hover:bg-palace-gold/40 text-palace-brightgold text-xs border border-palace-gold/40">
+                前往
+              </button>
+              <button onclick="removeBookmark('${p.id}')" class="text-rose-400 hover:text-rose-300 p-1">
+                <i class="fa-solid fa-trash-can text-xs"></i>
+              </button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function selectPOIById(id) {
+      const poi = POI_DATABASE.find(p => p.id === id);
+      if (poi) {
+        document.getElementById('bookmarks-modal').classList.add('hidden');
+        selectPOI(poi);
+      }
+    }
+
+    function removeBookmark(id) {
+      const idx = state.saved.indexOf(id);
+      if (idx > -1) {
+        state.saved.splice(idx, 1);
+        localStorage.setItem('zh_saved_spots', JSON.stringify(state.saved));
+        openBookmarksModal();
+        updateBookmarkBadge();
+      }
+    }
+
+    /* =========================================================================
+       14. TRIVIA QUIZ GAME
+       ========================================================================= */
+    function openQuizModal() {
+      state.quizIndex = 0;
+      state.quizScore = 0;
+      document.getElementById('quiz-modal').classList.remove('hidden');
+      renderQuizQuestion();
+    }
+
+    function renderQuizQuestion() {
+      const qData = QUIZ_DATABASE[state.quizIndex];
+      document.getElementById('quiz-step-text').innerText = `問題 ${state.quizIndex + 1} / ${QUIZ_DATABASE.length}`;
+      document.getElementById('quiz-score-text').innerText = `得分: ${state.quizScore}`;
+      document.getElementById('quiz-question').innerText = qData.q;
+      document.getElementById('quiz-feedback').classList.add('hidden');
+
+      const optionsContainer = document.getElementById('quiz-options-container');
+      optionsContainer.innerHTML = qData.options.map((opt, idx) => `
+        <button onclick="submitQuizAnswer(${idx})" class="w-full text-left p-3 rounded-xl glass-panel hover:bg-palace-gold/30 border border-palace-gold/30 text-amber-100 text-xs font-bold transition flex items-center justify-between group">
+          <span>${String.fromCharCode(65 + idx)}. ${opt}</span>
+          <i class="fa-solid fa-chevron-right text-xs opacity-0 group-hover:opacity-100 transition text-palace-gold"></i>
+        </button>
+      `).join('');
+    }
+
+    function submitQuizAnswer(selectedIdx) {
+      const qData = QUIZ_DATABASE[state.quizIndex];
+      const feedback = document.getElementById('quiz-feedback');
+
+      if (selectedIdx === qData.answer) {
+        state.quizScore += 20;
+        feedback.className = 'text-center font-bold text-xs p-3 rounded-xl bg-emerald-900/60 text-emerald-200 border border-emerald-500/40 my-2';
+        feedback.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i> 回答正確！${qData.explain}`;
+      } else {
+        feedback.className = 'text-center font-bold text-xs p-3 rounded-xl bg-rose-900/60 text-rose-200 border border-rose-500/40 my-2';
+        feedback.innerHTML = `<i class="fa-solid fa-circle-xmark mr-1"></i> 回答錯誤！${qData.explain}`;
+      }
+
+      feedback.classList.remove('hidden');
+
+      setTimeout(() => {
+        state.quizIndex++;
+        if (state.quizIndex < QUIZ_DATABASE.length) {
+          renderQuizQuestion();
+        } else {
+          showQuizResults();
+        }
+      }, 2200);
+    }
+
+    function showQuizResults() {
+      const container = document.getElementById('quiz-content');
+      container.innerHTML = `
+        <div class="text-center py-6">
+          <i class="fa-solid fa-trophy text-5xl text-palace-brightgold mb-4 animate-bounce"></i>
+          <h3 class="font-calli text-3xl text-palace-brightgold mb-2">測驗完成！</h3>
+          <p class="text-lg text-amber-100 font-bold mb-4">得分: ${state.quizScore} / 100 分</p>
+          <button onclick="openQuizModal()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-bold text-sm shadow-xl hover:scale-105 transition">
+            再試一次
+          </button>
+        </div>
+      `;
+    }
+
+    /* =========================================================================
+       15. WEB AUDIO API SYNTHESIZER
+       ========================================================================= */
+    let audioCtx;
+    function toggleAudio() {
+      state.audioEnabled = !state.audioEnabled;
+      const icon = document.getElementById('icon-audio');
+
+      if (state.audioEnabled) {
+        icon.className = 'fa-solid fa-volume-high text-base text-palace-brightgold';
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        playChimeSFX();
+      } else {
+        icon.className = 'fa-solid fa-volume-xmark text-base';
+      }
+    }
+
+    function playChimeSFX() {
+      if (!state.audioEnabled || !audioCtx) return;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1046.50, audioCtx.currentTime + 0.6);
+
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.6);
+    }
+
+    /* =========================================================================
+       16. RESIZE & RENDER LOOP
+       ========================================================================= */
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      controls.update();
+      animateNPC(delta);
+      animateParticles(delta);
+      update3DMarkers();
+
+      renderer.render(scene, camera);
+    }
+
+    /* =========================================================================
+       17. INITIALIZATION ON LOAD
+       ========================================================================= */
+    window.onload = function() {
+      init3D();
+      updateProgressUI();
+      updateBookmarkBadge();
+      setupSearch();
+
+      document.getElementById('btn-reset-cam').addEventListener('click', resetCamera);
+      document.getElementById('close-panel').addEventListener('click', closeSidePanel);
+      document.getElementById('btn-toggle-bookmark').addEventListener('click', toggleBookmarkCurrentPOI);
+      document.getElementById('btn-enter-interior').addEventListener('click', enterInteriorView);
+      document.getElementById('btn-exit-interior').addEventListener('click', exitInteriorView);
+      document.getElementById('btn-interact-char').addEventListener('click', () => openCharacterDialogue(state.currentPOI));
+      document.getElementById('panel-chat-trigger').addEventListener('click', () => openCharacterDialogue(state.currentPOI));
+
+      document.getElementById('btn-daynight').addEventListener('click', () => setDayNightMode(!state.dayMode));
+      document.getElementById('btn-quiz').addEventListener('click', openQuizModal);
+      document.getElementById('close-quiz').addEventListener('click', () => document.getElementById('quiz-modal').classList.add('hidden'));
+
+      document.getElementById('btn-bookmarks').addEventListener('click', openBookmarksModal);
+      document.getElementById('close-bookmarks').addEventListener('click', () => document.getElementById('bookmarks-modal').classList.add('hidden'));
+
+      document.getElementById('close-char-dialogue').addEventListener('click', () => document.getElementById('character-dialogue-modal').classList.add('hidden'));
+      document.getElementById('btn-audio').addEventListener('click', toggleAudio);
+    };
+  </script>
+</body>
+</html>
